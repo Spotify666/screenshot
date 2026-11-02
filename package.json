@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=20.9"
+    "node": "24.x"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",
