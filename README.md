@@ -38,7 +38,7 @@ the untouched original. Drop or paste an image anywhere to upload.
 Browser ──PUT original──▶ Supabase Storage (bucket "screenshots", public read)
    │                                ▲
    ▼                                │ signed upload URLs, delete, insert
-Vercel (Next.js, bom1)  ──x-admin-secret──▶ Edge Function "screenshot-admin"
+Vercel (Next.js, bom1)  ──Vercel OIDC token──▶ Edge Function "screenshot-admin"
    │  checks passcode                         (holds the service-role key)
    │  tiles with sharp
    └─ reads records ──▶ Postgres table public.screenshots (RLS: public select only)
@@ -47,7 +47,9 @@ Vercel (Next.js, bom1)  ──x-admin-secret──▶ Edge Function "screenshot-
 - `supabase/migrations/…_longshot.sql`: table, RLS, passcode rate-limit
   (10 wrong tries per IP per 15 minutes) and the 50 MB bucket.
 - `supabase/functions/screenshot-admin`: the only code holding the service-role key.
-  It accepts requests carrying the shared secret, whose SHA-256 is pinned in the source.
+  There's no shared secret: it accepts only requests carrying a Vercel OIDC token
+  that Vercel signed for this project (`prj_oKmOlzK9zzWYlGpJ1d4PwRyvN5hN`), checked
+  against Vercel's public keys.
 - `src/lib/server/tiling.ts`: the sharp tiling pipeline.
 - `src/components/tiled-image.tsx`, `viewer.tsx`, `scrubber.tsx`: the viewer.
 
@@ -58,16 +60,14 @@ Vercel (Next.js, bom1)  ──x-admin-secret──▶ Edge Function "screenshot-
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Publishable (anon) key, used for read-only access |
 | `ADMIN_PASSCODE` | Passcode for upload/delete. Change it here and redeploy |
-| `ADMIN_SHARED_SECRET` | Secret shared with the edge function |
 
-To rotate `ADMIN_SHARED_SECRET`, generate a new random value, put its SHA-256 in
-`supabase/functions/screenshot-admin/index.ts`, redeploy the function, and update
-the Vercel variable.
+If the Vercel project is moved or recreated, update `VERCEL_PROJECT_ID` (and the
+team slug) in `supabase/functions/screenshot-admin/index.ts` and redeploy the function.
 
 ## Local development
 
 ```bash
-cp .env.example .env.local   # fill in values
 npm install
+vercel link && vercel env pull .env.local   # includes VERCEL_OIDC_TOKEN
 npm run dev
 ```

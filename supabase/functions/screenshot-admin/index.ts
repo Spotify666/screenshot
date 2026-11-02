@@ -1,13 +1,22 @@
 // Longshot admin gateway.
 //
-// The Vercel server is the only caller: it checks the passcode, then asks this
+// The Vercel app is the only caller: it checks the passcode, then asks this
 // function (which holds the service-role key) to sign uploads, write records
-// and delete files. Requests must carry the shared secret in `x-admin-secret`;
-// only its SHA-256 lives here, the secret itself is a Vercel env var.
+// and delete files.
+//
+// There is no shared secret. Each request carries the Vercel deployment's own
+// OIDC token (x-vercel-oidc-token), signed by Vercel; we verify it against
+// Vercel's public keys and accept only tokens issued to the Longshot project.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
+import { createRemoteJWKSet, jwtVerify } from "npm:jose@6.2.15";
 
-const SECRET_SHA256 = "c8b0613c3f059fcea877276d8e26e5feefc19f52145d78e827f0e181fc6ee835";
+const VERCEL_TEAM_SLUG = "spotifys-projects-00b6ab18";
+const VERCEL_PROJECT_ID = "prj_oKmOlzK9zzWYlGpJ1d4PwRyvN5hN";
+const VERCEL_PROJECT_NAME = "longshot";
+const OIDC_ISSUER = `https://oidc.vercel.com/${VERCEL_TEAM_SLUG}`;
+const OIDC_AUDIENCE = `https://vercel.com/${VERCEL_TEAM_SLUG}`;
+const JWKS = createRemoteJWKSet(new URL(`${OIDC_ISSUER}/.well-known/jwks`));
 const BUCKET = "screenshots";
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const PATH_RE = new RegExp(
@@ -33,16 +42,19 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json", connection: "keep-alive" },
   });
 
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+async function isLongshotDeployment(req: Request): Promise<boolean> {
+  const token = req.headers.get("x-vercel-oidc-token");
+  if (!token) return false;
+  try {
+    const { payload } = await jwtVerify(token, JWKS, { issuer: OIDC_ISSUER, audience: OIDC_AUDIENCE });
+    if (typeof payload.project_id === "string") return payload.project_id === VERCEL_PROJECT_ID;
+    return (
+      typeof payload.sub === "string" &&
+      payload.sub.startsWith(`owner:${VERCEL_TEAM_SLUG}:project:${VERCEL_PROJECT_NAME}:environment:`)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function validPaths(paths: unknown): paths is string[] {
@@ -69,10 +81,7 @@ async function removeScreenshotFiles(id: string) {
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const provided = req.headers.get("x-admin-secret") ?? "";
-  if (!provided || !safeEqual(await sha256Hex(provided), SECRET_SHA256)) {
-    return json({ error: "Unauthorized" }, 401);
-  }
+  if (!(await isLongshotDeployment(req))) return json({ error: "Unauthorized" }, 401);
 
   let body: Record<string, unknown>;
   try {
