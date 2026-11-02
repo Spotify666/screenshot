@@ -1,27 +1,53 @@
 "use client";
 
-import { ArrowDown, ArrowLeft, ArrowUp, Download, Minus, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, Link2, Minus, Plus, Trash2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { toast } from "sonner";
 import { cn } from "@/lib/cn";
 import { formatBytes, formatNumber } from "@/lib/format";
 import { navState } from "@/lib/nav-state";
-import { displayName, downloadUrl, type Screenshot } from "@/lib/screenshot";
+import { displayName, sharePath, type Screenshot } from "@/lib/screenshot";
 import { useAdmin } from "./admin-provider";
 import { Dock, DockButton } from "./dock";
 import { useElementWidth, useHideOnScroll, useIsoLayoutEffect, useMediaQuery } from "./hooks";
 import { Scrubber } from "./scrubber";
 import { TiledImage } from "./tiled-image";
-import { Button } from "./ui";
+import { Button, Logo } from "./ui";
 
 const MIN_WIDTH = 240;
 
-export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
+/** Opens the native share sheet on phones; copies the link elsewhere. */
+async function shareScreenshot(s: Screenshot) {
+  const url = new URL(sharePath(s), window.location.origin).toString();
+  const touch = window.matchMedia("(pointer: coarse)").matches;
+  if (touch && typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title: displayName(s.name), url });
+      return;
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success("Link copied", { description: url });
+  } catch {
+    window.prompt("Copy this link", url);
+  }
+}
+
+/**
+ * The screenshot viewer.
+ * - `owner`: reached from the gallery; back button, Share/Upload/Delete dock.
+ * - `shared`: what a share link opens; just the screenshot, nothing else.
+ */
+export function Viewer({ screenshot: s, mode = "owner" }: { screenshot: Screenshot; mode?: "owner" | "shared" }) {
   const router = useRouter();
-  const { pickFiles, requestDelete } = useAdmin();
   const chromeHidden = useHideOnScroll();
   const coarse = useMediaQuery("(pointer: coarse)");
   const [colRef, colWidth] = useElementWidth<HTMLDivElement>();
+  const owner = mode === "owner";
 
   // Desktop column width. Default ≈ a phone held at reading distance.
   const defaultWidth = Math.max(320, Math.min(560, s.width));
@@ -73,7 +99,7 @@ export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
       if (e.key === "+" || e.key === "=") zoomIn();
       else if (e.key === "-" || e.key === "_") zoomOut();
       else if (e.key === "0") resetZoom();
-      else if (e.key === "Escape") goBack();
+      else if (e.key === "Escape" && owner) goBack();
       else return;
       e.preventDefault();
     };
@@ -94,14 +120,15 @@ export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
       >
         <div className="border-b border-line bg-canvas/95 pt-[env(safe-area-inset-top)]">
           <div className="mx-auto flex h-14 max-w-[1240px] items-center gap-1 px-1.5 sm:gap-2 sm:px-4">
-            <button
-              type="button"
-              onClick={goBack}
-              aria-label="All screenshots"
-              className="pressable flex size-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink"
-            >
-              <ArrowLeft className="size-5" strokeWidth={2} />
-            </button>
+            {owner ? (
+              <IconButton label="All screenshots" onClick={goBack}>
+                <ArrowLeft className="size-5" strokeWidth={2} />
+              </IconButton>
+            ) : (
+              <span className="flex size-11 shrink-0 items-center justify-center" aria-hidden>
+                <Logo className="size-[22px] text-ink" />
+              </span>
+            )}
             <div className="min-w-0 flex-1 px-0.5">
               <h1 className="truncate text-[14.5px] leading-tight font-medium tracking-[-0.005em]">{displayName(s.name)}</h1>
               <p className="mt-0.5 truncate font-mono text-[11.5px] leading-tight text-ink-3 tabular">{meta}</p>
@@ -126,14 +153,6 @@ export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
               </div>
             )}
 
-            <a
-              href={downloadUrl(s)}
-              aria-label="Download original"
-              title="Download original"
-              className="pressable flex size-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink"
-            >
-              <Download className="size-[19px]" strokeWidth={2} />
-            </a>
           </div>
         </div>
       </header>
@@ -147,7 +166,12 @@ export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
           <TiledImage screenshot={s} className="sm:rounded-[12px] sm:shadow-page" />
         </div>
 
-        <footer className="mx-auto flex max-w-sm flex-col items-center gap-3 px-4 pt-10 pb-[calc(env(safe-area-inset-bottom)+128px)] text-center">
+        <footer
+          className={cn(
+            "mx-auto flex max-w-sm flex-col items-center gap-3 px-4 pt-10 text-center",
+            owner ? "pb-[calc(env(safe-area-inset-bottom)+128px)]" : "pb-[calc(env(safe-area-inset-bottom)+48px)]",
+          )}
+        >
           <p className="font-mono text-[11.5px] text-ink-3 tabular">End · {formatNumber(s.height)} px tall</p>
           <Button size="sm" variant="secondary" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
             <ArrowUp className="size-3.5" strokeWidth={2.25} />
@@ -157,23 +181,48 @@ export function Viewer({ screenshot: s }: { screenshot: Screenshot }) {
       </main>
 
       <Scrubber />
-      <ResumeHint id={s.id} />
-
-      <Dock hidden={chromeHidden}>
-        <DockButton variant="primary" onClick={pickFiles}>
-          <Upload className="size-[17px]" strokeWidth={2.25} />
-          Upload
-        </DockButton>
-        <DockButton onClick={() => requestDelete([s], () => router.replace("/"))}>
-          <Trash2 className="size-[17px]" strokeWidth={2} />
-          Delete
-        </DockButton>
-      </Dock>
+      <ResumeHint id={s.id} raised={owner} />
+      {owner && <OwnerDock screenshot={s} hidden={chromeHidden} />}
     </div>
   );
 }
 
-function ZoomButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+function OwnerDock({ screenshot: s, hidden }: { screenshot: Screenshot; hidden: boolean }) {
+  const router = useRouter();
+  const { pickFiles, requestDelete } = useAdmin();
+  return (
+    <Dock hidden={hidden}>
+      <DockButton variant="primary" onClick={() => void shareScreenshot(s)}>
+        <Link2 className="size-[17px]" strokeWidth={2.25} />
+        Share
+      </DockButton>
+      <DockButton onClick={pickFiles}>
+        <Upload className="size-[17px]" strokeWidth={2} />
+        Upload
+      </DockButton>
+      <DockButton onClick={() => requestDelete([s], () => router.replace("/"))}>
+        <Trash2 className="size-[17px]" strokeWidth={2} />
+        Delete
+      </DockButton>
+    </Dock>
+  );
+}
+
+function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="pressable flex size-11 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-2 hover:text-ink"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ZoomButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
@@ -188,7 +237,7 @@ function ZoomButton({ label, onClick, children }: { label: string; onClick: () =
 }
 
 /** Remembers how far you read, and offers to jump back there next time. */
-function ResumeHint({ id }: { id: string }) {
+function ResumeHint({ id, raised }: { id: string; raised: boolean }) {
   const key = `longshot:pos:${id}`;
   const [resumeAt, setResumeAt] = useState<number | null>(null);
 
@@ -225,7 +274,12 @@ function ResumeHint({ id }: { id: string }) {
   if (resumeAt == null) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+82px)] z-30 flex justify-center px-4">
+    <div
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-30 flex justify-center px-4",
+        raised ? "bottom-[calc(env(safe-area-inset-bottom)+82px)]" : "bottom-[calc(env(safe-area-inset-bottom)+20px)]",
+      )}
+    >
       <button
         type="button"
         onClick={() => {

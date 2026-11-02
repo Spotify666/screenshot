@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { SUPABASE_KEY, SUPABASE_URL, UUID_RE } from "../config";
-import type { Screenshot } from "../screenshot";
+import { PUBLIC_COLUMNS, SLUG_RE, type Screenshot } from "../screenshot";
 
 async function rest<T>(query: string): Promise<T> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${query}`, {
@@ -13,11 +13,19 @@ async function rest<T>(query: string): Promise<T> {
 }
 
 export const listScreenshots = cache(async () =>
-  rest<Screenshot[]>("screenshots?select=*&order=created_at.desc"),
+  rest<Screenshot[]>(`screenshots?select=${PUBLIC_COLUMNS}&order=created_at.desc`),
 );
 
 export const getScreenshot = cache(async (id: string): Promise<Screenshot | null> => {
   if (!UUID_RE.test(id)) return null;
-  const rows = await rest<Screenshot[]>(`screenshots?select=*&id=eq.${id}&limit=1`);
+  const rows = await rest<Screenshot[]>(`screenshots?select=${PUBLIC_COLUMNS}&id=eq.${id}&limit=1`);
+  return rows[0] ?? null;
+});
+
+export const getScreenshotBySlug = cache(async (slug: string): Promise<Screenshot | null> => {
+  if (!SLUG_RE.test(slug)) return null;
+  const rows = await rest<Screenshot[]>(
+    `screenshots?select=${PUBLIC_COLUMNS}&share_slug=eq.${encodeURIComponent(slug)}&limit=1`,
+  );
   return rows[0] ?? null;
 });

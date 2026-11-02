@@ -1,122 +1,155 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { cn } from "@/lib/cn";
-import { tileRects, type Screenshot, type TileRect } from "@/lib/screenshot";
+import { publicUrl, tileRects, type Screenshot, type TileRect } from "@/lib/screenshot";
 
-const BACKGROUND_CONCURRENCY = 6;
-/** Prefetch every tile in the background only when the whole set is modest. */
+/** Tiles downloading at once. Few, so the one you're looking at gets the bandwidth. */
+const MAX_INFLIGHT = 3;
+/** Beyond this many screens away, tiles load only when the whole set is modest. */
+const NEAR_SCREENS = 3;
 const PRELOAD_ALL_BYTES = 16 * 1024 * 1024;
 
+const blockSave = (e: MouseEvent) => e.preventDefault();
+
 /**
- * Renders a screenshot as a stack of full-resolution tiles inside a box with
- * the image's exact aspect ratio, so nothing shifts while tiles stream in.
+ * Shows a screenshot exactly as captured, top to bottom, without ever leaving a
+ * gap:
  *
- * Tiles near the viewport (±3 screens) load immediately; once the first row is
- * in, the rest are fetched quietly in the background, nearest first, so that
- * flinging or scrubbing never lands on an empty stretch.
+ * 1. A tiny preview of the whole image paints first, so the full capture is on
+ *    screen, in order, almost immediately (slightly soft).
+ * 2. Full-resolution tiles then sharpen it in reading order: what's on screen
+ *    first (top to bottom), then what's below, then what's above. Only a few
+ *    download at once, and tiles far from the viewport are cancelled when you
+ *    jump, so the part you're reading is always next.
+ *
+ * Tiles sit in a box with the image's exact aspect ratio, so nothing shifts.
  */
 export function TiledImage({ screenshot, className }: { screenshot: Screenshot; className?: string }) {
   const rects = useMemo(() => tileRects(screenshot), [screenshot]);
   const containerRef = useRef<HTMLDivElement>(null);
   const settled = useRef(new Set<string>());
-  const pump = useRef<() => void>(() => {});
+  const preloadAll = useRef(false);
   const [wanted, setWanted] = useState<ReadonlySet<string>>(
     () => new Set(rects.filter((r) => r.row === 0).map((r) => r.key)),
   );
+  const hasPreview = Boolean(screenshot.preview_path);
 
-  const want = useCallback((keys: string[]) => {
-    if (!keys.length) return;
+  const pump = useCallback(() => {
+    const box = containerRef.current?.getBoundingClientRect();
+    if (!box || box.height <= 0) return;
+    // Viewport and one screen, as fractions of the image height.
+    const top = -box.top / box.height;
+    const bottom = (window.innerHeight - box.top) / box.height;
+    const screen = Math.max(1e-6, window.innerHeight / box.height);
+
     setWanted((prev) => {
-      if (keys.every((k) => prev.has(k))) return prev;
-      const next = new Set(prev);
-      for (const k of keys) next.add(k);
+      let inflight = 0;
+      for (const k of prev) if (!settled.current.has(k)) inflight++;
+
+      const queue: { key: string; score: number }[] = [];
+      for (const r of rects) {
+        if (prev.has(r.key)) continue;
+        const t = r.top / 100;
+        const b = (r.top + r.height) / 100;
+        let score: number;
+        if (b > top && t < bottom) score = t; // on screen, top to bottom
+        else if (t >= bottom) score = 10 + (t - bottom) / screen; // below, in reading order
+        else score = 10.25 + ((top - b) / screen) * 1.5; // above, nearest first
+        if (score >= 10 && score - 10 > NEAR_SCREENS && !preloadAll.current) continue;
+        queue.push({ key: r.key, score });
+      }
+      if (!queue.length) return prev;
+      queue.sort((x, y) => x.score - y.score);
+
+      let room = MAX_INFLIGHT - inflight;
+      let next: Set<string> | null = null;
+
+      // Something on screen is waiting: cancel downloads that are now far away.
+      const urgent = queue.filter((q) => q.score < 10).length;
+      if (urgent > room) {
+        for (const r of rects) {
+          if (room >= urgent) break;
+          if (!prev.has(r.key) || settled.current.has(r.key)) continue;
+          const t = r.top / 100;
+          const b = (r.top + r.height) / 100;
+          if (b < top - screen || t > bottom + screen) {
+            next ??= new Set(prev);
+            next.delete(r.key);
+            room++;
+          }
+        }
+      }
+
+      if (room <= 0) return next ?? prev;
+      next ??= new Set(prev);
+      for (const q of queue.slice(0, room)) next.add(q.key);
       return next;
     });
-  }, []);
+  }, [rects]);
 
-  const onSettled = useCallback((key: string) => {
-    settled.current.add(key);
-    pump.current();
-  }, []);
+  const onSettled = useCallback(
+    (key: string) => {
+      settled.current.add(key);
+      pump();
+    },
+    [pump],
+  );
 
-  // Foreground: whatever is within three screens of the viewport.
-  useEffect(() => {
-    const root = containerRef.current;
-    if (!root) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        const keys: string[] = [];
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          const key = (entry.target as HTMLElement).dataset.tile;
-          if (key) keys.push(key);
-          io.unobserve(entry.target);
-        }
-        want(keys);
-      },
-      { rootMargin: "300% 0px 300% 0px" },
-    );
-    root.querySelectorAll<HTMLElement>("[data-tile]").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, [rects, want]);
-
-  // Background: everything else, closest to the reading position first.
   useEffect(() => {
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
-    if (connection?.saveData || screenshot.original_bytes > PRELOAD_ALL_BYTES) return;
+    preloadAll.current = !connection?.saveData && screenshot.original_bytes <= PRELOAD_ALL_BYTES;
 
-    let active = false;
-    pump.current = () => {
-      if (!active) return;
-      setWanted((prev) => {
-        let inflight = 0;
-        for (const k of prev) if (!settled.current.has(k)) inflight++;
-        const room = BACKGROUND_CONCURRENCY - inflight;
-        if (room <= 0) return prev;
-
-        const box = containerRef.current?.getBoundingClientRect();
-        const focus = box && box.height > 0 ? Math.min(1, Math.max(0, (window.innerHeight / 2 - box.top) / box.height)) : 0;
-        const next = rects
-          .filter((r) => !prev.has(r.key))
-          .map((r) => {
-            const center = (r.top + r.height / 2) / 100;
-            // Slight bias toward what's below: that's where people scroll.
-            return { key: r.key, d: center >= focus ? center - focus : (focus - center) * 1.5 };
-          })
-          .sort((a, b) => a.d - b.d)
-          .slice(0, room);
-        if (!next.length) return prev;
-        const out = new Set(prev);
-        for (const n of next) out.add(n.key);
-        return out;
+    let frame = 0;
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(() => {
+        frame = 0;
+        pump();
       });
     };
-
-    const start = () => {
-      active = true;
-      pump.current();
-    };
-    const idle = typeof window.requestIdleCallback === "function";
-    const handle = idle ? window.requestIdleCallback(start, { timeout: 1500 }) : window.setTimeout(start, 700);
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    const ro = new ResizeObserver(schedule);
+    if (containerRef.current) ro.observe(containerRef.current);
     return () => {
-      active = false;
-      pump.current = () => {};
-      if (idle) window.cancelIdleCallback(handle);
-      else window.clearTimeout(handle);
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      ro.disconnect();
     };
-  }, [rects, screenshot.original_bytes]);
+  }, [pump, screenshot.original_bytes]);
 
   return (
     <div
       ref={containerRef}
       role="img"
       aria-label={screenshot.name}
-      className={cn("relative w-full overflow-hidden bg-surface-2", className)}
+      onContextMenu={blockSave}
+      onDragStart={blockSave}
+      className={cn("no-save relative w-full overflow-hidden bg-surface-2", className)}
       style={{ aspectRatio: `${screenshot.width} / ${screenshot.height}` }}
     >
+      {hasPreview && (
+        <img
+          src={publicUrl(screenshot.preview_path!)}
+          alt=""
+          aria-hidden
+          decoding="async"
+          fetchPriority="high"
+          draggable={false}
+          className="absolute inset-0 block size-full max-w-none"
+        />
+      )}
       {rects.map((r) => (
-        <Tile key={r.key} rect={r} load={wanted.has(r.key)} priority={r.row === 0} onSettled={onSettled} />
+        <Tile
+          key={r.key}
+          rect={r}
+          load={wanted.has(r.key)}
+          priority={r.row === 0}
+          shimmer={!hasPreview}
+          onSettled={onSettled}
+        />
       ))}
     </div>
   );
@@ -128,11 +161,13 @@ const Tile = memo(function Tile({
   rect,
   load,
   priority,
+  shimmer,
   onSettled,
 }: {
   rect: TileRect;
   load: boolean;
   priority: boolean;
+  shimmer: boolean;
   onSettled: (key: string) => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -153,10 +188,10 @@ const Tile = memo(function Tile({
   return (
     <div
       data-tile={rect.key}
-      className={cn("absolute", load && !loaded && "skeleton")}
+      className={cn("absolute", shimmer && load && !loaded && "skeleton")}
       style={{ left: `${rect.left}%`, top: `${rect.top}%`, width: `${rect.width}%`, height: `${rect.height}%` }}
     >
-      {load && (
+      {(load || loaded) && (
         <img
           ref={imgRef}
           src={attempt ? `${rect.src}?retry=${attempt}` : rect.src}
@@ -170,7 +205,7 @@ const Tile = memo(function Tile({
             else onSettled(rect.key);
           }}
           data-loaded={loaded || undefined}
-          className="tile block size-full max-w-none select-none"
+          className="tile block size-full max-w-none"
         />
       )}
     </div>

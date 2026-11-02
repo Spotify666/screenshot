@@ -15,6 +15,8 @@ export const metadata: Metadata = {
   applicationName: "Longshot",
   appleWebApp: { capable: true, title: "Longshot", statusBarStyle: "default" },
   formatDetection: { telephone: false },
+  // Private screenshots: keep every page out of search engines.
+  robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
 export const viewport: Viewport = {

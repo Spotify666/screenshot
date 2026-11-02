@@ -1,7 +1,10 @@
 export const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 export const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
 
+/** Public bucket: tiles, thumbnails and previews. */
 export const BUCKET = "screenshots";
+/** Private bucket: untouched originals. Never served to browsers. */
+export const ORIGINALS_BUCKET = "screenshot-originals";
 
 /** 50 MB — matches the bucket's file_size_limit. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;

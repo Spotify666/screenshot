@@ -3,7 +3,10 @@
 Upload long screenshots (WhatsApp chats, scroll captures — up to 50 MB each) and
 read them at full resolution, smoothly, on any phone, tablet or desktop browser.
 
-- **View:** anyone with the link can browse and read.
+- **View:** open the site to browse; tap a screenshot to read it.
+- **Share:** the Share button gives a short `/share/<id>` link that opens just
+  that screenshot: no gallery, no upload or delete. Deleting the screenshot kills
+  the link immediately.
 - **Upload / Delete:** the two actions in the bottom bar, protected by a passcode
   (`ADMIN_PASSCODE`, currently `1111`). The passcode is remembered for the browser
   session after the first correct entry.
@@ -27,15 +30,24 @@ does that:
    layout shift). Tiles within 3 screens load immediately; the rest prefetch
    quietly in the background, nearest first, so flinging or scrubbing never lands on blank space.
 
+Loading is ordered so the capture always reads top to bottom: a ~200 KB preview of
+the whole image paints first (so the full capture is on screen, in order, at once),
+then full-resolution tiles sharpen it starting with what's on screen, then what's
+below. Only three download at a time, and far-away ones are cancelled when you jump.
+
 Viewer extras: a draggable fast-scroll handle for very long captures, an
 auto-hiding header and dock, zoom on desktop (`+` `−` `0`; it keeps your place),
-native pinch-zoom on touch, "Continue at 42%" when you come back, and a download of
-the untouched original. Drop or paste an image anywhere to upload.
+native pinch-zoom on touch, and "Continue at 42%" when you come back. Drop or paste
+an image anywhere to upload.
+
+There is no download: originals sit in a private bucket and are never served,
+and long-press / right-click "save image" is blocked on the viewer.
 
 ## Architecture
 
 ```
-Browser ──PUT original──▶ Supabase Storage (bucket "screenshots", public read)
+Browser ──PUT original──▶ Supabase Storage "screenshot-originals" (private)
+                           Supabase Storage "screenshots" (public: tiles, thumb, preview)
    │                                ▲
    ▼                                │ signed upload URLs, delete, insert
 Vercel (Next.js, bom1)  ──Vercel OIDC token──▶ Edge Function "screenshot-admin"
@@ -44,8 +56,12 @@ Vercel (Next.js, bom1)  ──Vercel OIDC token──▶ Edge Function "screensh
    └─ reads records ──▶ Postgres table public.screenshots (RLS: public select only)
 ```
 
-- `supabase/migrations/…_longshot.sql`: table, RLS, passcode rate-limit
-  (10 wrong tries per IP per 15 minutes) and the 50 MB bucket.
+- `supabase/migrations/`: table, column-level read grants (the original's
+  location is never public), share slugs, passcode rate-limit (10 wrong tries per
+  IP per 15 minutes) and the two 50 MB buckets.
+- Derived files live under `assets/<id>/<revision>/` with a 1-hour cache, so a
+  deleted screenshot drops out of CDN caches within the hour (the free Supabase
+  plan can't purge the CDN), while its page and share link 404 at once.
 - `supabase/functions/screenshot-admin`: the only code holding the service-role key.
   There's no shared secret: it accepts only requests carrying a Vercel OIDC token
   that Vercel signed for this project (`prj_oKmOlzK9zzWYlGpJ1d4PwRyvN5hN`), checked

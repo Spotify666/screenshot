@@ -179,7 +179,7 @@ function Card({
     <>
       <div
         className={cn(
-          "relative aspect-[4/5] overflow-hidden rounded-[16px] bg-surface-2 ring-1 ring-line transition-[box-shadow,transform] duration-200 ease-out",
+          "no-save relative aspect-[4/5] overflow-hidden rounded-[16px] bg-surface-2 ring-1 ring-line transition-[box-shadow,transform] duration-200 ease-out",
           selecting && selected && "scale-[0.96] ring-2 ring-danger",
         )}
       >
@@ -190,6 +190,7 @@ function Card({
           height={s.thumb_height}
           loading={index < 8 ? "eager" : "lazy"}
           decoding="async"
+          draggable={false}
           className={cn(
             "absolute inset-x-0 top-0 h-auto w-full transition-transform duration-300 ease-out",
             !selecting && "group-hover:translate-y-[calc(var(--peek)*-100%)] group-hover:duration-[1400ms]",

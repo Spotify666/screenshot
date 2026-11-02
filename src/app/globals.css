@@ -189,6 +189,17 @@
   }
 }
 
+/* No "Save image" / "Download image" on long-press or right-click. */
+.no-save,
+.no-save img {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.no-save img {
+  pointer-events: none;
+}
+
 /* Tiles fade in once decoded; overlap keeps seams invisible. */
 .tile {
   opacity: 0;

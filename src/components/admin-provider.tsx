@@ -235,8 +235,10 @@ export function AdminProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  // Drop files anywhere, or paste an image, to upload.
+  // Drop files anywhere, or paste an image, to upload (not on shared pages).
+  const sharedPage = pathname.startsWith("/share/");
   useEffect(() => {
+    if (sharedPage) return;
     let depth = 0;
     const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
     const onEnter = (e: DragEvent) => {
@@ -282,7 +284,7 @@ export function AdminProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("drop", onDrop);
       window.removeEventListener("paste", onPaste);
     };
-  }, [openUpload]);
+  }, [openUpload, sharedPage]);
 
   const api = useMemo<AdminApi>(() => ({ pickFiles, openUpload, requestDelete }), [pickFiles, openUpload, requestDelete]);
 
@@ -547,7 +549,8 @@ function DeleteSheet({
           <img
             src={publicUrl(single.thumb_path)}
             alt=""
-            className="h-14 w-10 shrink-0 rounded-[8px] object-cover object-top ring-1 ring-line"
+            draggable={false}
+            className="pointer-events-none h-14 w-10 shrink-0 rounded-[8px] object-cover object-top ring-1 ring-line select-none"
           />
           <div className="min-w-0">
             <p className="truncate text-[14px] font-medium">{displayName(single.name)}</p>
@@ -563,7 +566,7 @@ function DeleteSheet({
               key={t.id}
               src={publicUrl(t.thumb_path)}
               alt=""
-              className="h-16 w-12 rounded-[9px] object-cover object-top shadow-sm ring-2 ring-surface"
+              className="pointer-events-none h-16 w-12 rounded-[9px] object-cover object-top shadow-sm ring-2 ring-surface select-none"
               style={{ transform: `rotate(${(i - Math.min(4, n - 1) / 2) * 4}deg)` }}
             />
           ))}
