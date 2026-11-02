@@ -1,0 +1,222 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Tokens. Warm neutral paper in light, soft carbon in dark. One accent, used
+   sparingly (focus, progress); red is reserved for destructive actions.
+   ------------------------------------------------------------------------- */
+:root {
+  --bg: #f5f4f0;
+  --surface: #ffffff;
+  --surface-2: #ecebe6;
+  --ink: #161615;
+  --ink-2: #55544e;
+  --ink-3: #85837b;
+  --line: rgb(22 22 21 / 0.08);
+  --line-strong: rgb(22 22 21 / 0.15);
+  --accent: #1d7a54;
+  --danger: #c8372d;
+  --danger-soft: rgb(200 55 45 / 0.09);
+  --canvas: #e9e8e2;
+  --float-shadow: 0 1px 1px rgb(0 0 0 / 0.04), 0 6px 16px -4px rgb(0 0 0 / 0.1), 0 22px 44px -14px rgb(0 0 0 / 0.16);
+  --page-shadow: 0 0 0 1px rgb(22 22 21 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04), 0 18px 50px -24px rgb(0 0 0 / 0.25);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f0f0e;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #edece8;
+    --ink-2: #a9a79f;
+    --ink-3: #7a786f;
+    --line: rgb(237 236 232 / 0.08);
+    --line-strong: rgb(237 236 232 / 0.16);
+    --accent: #43b987;
+    --danger: #f0675d;
+    --danger-soft: rgb(240 103 93 / 0.12);
+    --canvas: #0a0a09;
+    --float-shadow: 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.6), 0 24px 48px -12px rgb(0 0 0 / 0.6);
+    --page-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 18px 50px -24px rgb(0 0 0 / 0.8);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-canvas: var(--canvas);
+  --shadow-float: var(--float-shadow);
+  --shadow-page: var(--page-shadow);
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@theme {
+  /* Strong curves: built-in CSS easings are too weak. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+    background: var(--bg);
+  }
+
+  html:has(.viewer-root) {
+    background: var(--canvas);
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--accent) 28%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+}
+
+/* Pressables answer the finger instantly. */
+@utility pressable {
+  transition:
+    transform 160ms var(--ease-out),
+    background-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    box-shadow 150ms ease;
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+}
+
+@utility enter {
+  animation: enter 300ms var(--ease-out) both;
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes empty-scroll {
+  0%,
+  12% {
+    transform: translateY(0);
+  }
+  88%,
+  100% {
+    transform: translateY(-58%);
+  }
+}
+
+/* Tiles fade in once decoded; overlap keeps seams invisible. */
+.tile {
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.tile[data-loaded] {
+  opacity: 1;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    color-mix(in oklab, var(--surface-2) 55%, var(--surface)) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter {
+    animation-name: fade-in;
+  }
+  .skeleton {
+    animation: none;
+  }
+  .reduce-motion-static {
+    animation: none !important;
+  }
+}

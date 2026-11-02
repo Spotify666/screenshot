@@ -25,7 +25,6 @@ alter table public.screenshots enable row level security;
 revoke all on table public.screenshots from anon, authenticated;
 grant select on table public.screenshots to anon, authenticated;
 
-drop policy if exists "Screenshots are publicly readable" on public.screenshots;
 create policy "Screenshots are publicly readable"
   on public.screenshots for select
   to anon, authenticated
