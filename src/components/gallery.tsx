@@ -171,6 +171,7 @@ function Card({
   const peek = Math.min(0.42, Math.max(0, 1 - (s.thumb_width * 1.25) / s.thumb_height));
 
   const preloadFirstTile = () => {
+    if (s.preview_path) new Image().src = publicUrl(s.preview_path);
     const first = tileRects(s)[0];
     if (first) new Image().src = first.src;
   };

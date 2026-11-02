@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { preload } from "react-dom";
 import { Viewer } from "@/components/viewer";
-import { displayName } from "@/lib/screenshot";
+import { displayName, publicUrl } from "@/lib/screenshot";
 import { getScreenshot } from "@/lib/server/data";
 
 export const dynamic = "force-dynamic";
@@ -18,5 +19,7 @@ export default async function ScreenshotPage({ params }: Props) {
   const { id } = await params;
   const screenshot = await getScreenshot(id);
   if (!screenshot) notFound();
+  // Start the whole-image preview before anything else on the page.
+  if (screenshot.preview_path) preload(publicUrl(screenshot.preview_path), { as: "image", fetchPriority: "high" });
   return <Viewer key={screenshot.id} screenshot={screenshot} mode="owner" />;
 }

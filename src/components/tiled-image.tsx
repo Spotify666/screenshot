@@ -62,28 +62,33 @@ export function TiledImage({ screenshot, className }: { screenshot: Screenshot; 
       if (!queue.length) return prev;
       queue.sort((x, y) => x.score - y.score);
 
-      let room = MAX_INFLIGHT - inflight;
+      const urgent = queue.filter((q) => q.score < 10);
+      const later = queue.filter((q) => q.score >= 10);
       let next: Set<string> | null = null;
 
-      // Something on screen is waiting: cancel downloads that are now far away.
-      const urgent = queue.filter((q) => q.score < 10).length;
-      if (urgent > room) {
+      if (urgent.length) {
+        // What's on screen never waits its turn: start it now, and cancel
+        // downloads for parts that are no longer near the viewport.
+        next = new Set(prev);
         for (const r of rects) {
-          if (room >= urgent) break;
           if (!prev.has(r.key) || settled.current.has(r.key)) continue;
           const t = r.top / 100;
           const b = (r.top + r.height) / 100;
-          if (b < top - screen || t > bottom + screen) {
-            next ??= new Set(prev);
+          if (b < top - screen * 0.5 || t > bottom + screen * 0.5) {
             next.delete(r.key);
-            room++;
+            inflight--;
           }
+        }
+        for (const q of urgent) {
+          next.add(q.key);
+          inflight++;
         }
       }
 
-      if (room <= 0) return next ?? prev;
+      const room = MAX_INFLIGHT - inflight;
+      if (room <= 0 || !later.length) return next ?? prev;
       next ??= new Set(prev);
-      for (const q of queue.slice(0, room)) next.add(q.key);
+      for (const q of later.slice(0, room)) next.add(q.key);
       return next;
     });
   }, [rects]);

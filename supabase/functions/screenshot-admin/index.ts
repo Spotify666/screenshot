@@ -38,6 +38,8 @@ const REV_RE = /^[a-z0-9]{6,16}$/;
 const MAX_PATHS = 600;
 const EXTS = ["png", "jpg", "webp"];
 const UPDATABLE = new Set([
+  "width",
+  "height",
   "tiles",
   "thumb_path",
   "thumb_width",
