@@ -4,7 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { tileRects, type Screenshot, type TileRect } from "@/lib/screenshot";
 
-const BACKGROUND_CONCURRENCY = 4;
+const BACKGROUND_CONCURRENCY = 6;
 /** Prefetch every tile in the background only when the whole set is modest. */
 const PRELOAD_ALL_BYTES = 16 * 1024 * 1024;
 
